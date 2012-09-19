@@ -1,9 +1,18 @@
 open Parse
 open Muthr
 
+(* In anonymous mode, "anonymous" is the only accepted login, any
+   password is ok, the initial directory is [!anon_dir], the effective
+   userid is the one of 'nobody'.
+ *)
+
+let anonymous = ref false
+let anon_dir  = ref "/tmp"  
+
 let print s = print_string s; print_newline (); flush stdout
 let debug s = print s
 let log   s = print s
+let err   s = print s; exit 1
 
 let of_ascii s l =            (* change crlf to newline *)
   let c = ref 0 in
@@ -62,15 +71,13 @@ taken care of in the PAM configuration file.  Here we use
 using the system password file, must be given the \texttt{nodelay}
 option.
 
-TODO: see pam\_ftp for anonymous access
-
  *)
 
 let (>>=) = Muthr.(>>=)
 
 open Pam
 
-let do_login name pass k =
+let do_login_pam name pass k =
   let conv a b = match a with
   | Pam_Prompt_Echo_On -> name
   | Pam_Prompt_Echo_Off -> pass
@@ -88,10 +95,17 @@ let do_login name pass k =
   if uid = -1 then Muthr.sleep 3. >>= fun () -> k (dir, uid)
   else k (dir, uid)
 
-(*
-let do_login name pass k =
-  k ("/tmp/", 1000)
-*)
+let nobody = 
+  try
+    (Unix.getpwnam "nobody").Unix.pw_uid
+  with Not_found -> err "User 'nobody' not found (required for anon mode)"
+
+let do_login_anon name pass k =
+  if name="anonymous" then k (!anon_dir, nobody)
+  else k ("/tmp/", -1)
+
+let do_login name pass k = 
+  (if !anonymous then do_login_anon else do_login_pam) name pass k
 
 let set_user id =
   Euid.seteuid 0;

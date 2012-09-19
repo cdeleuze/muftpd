@@ -8,7 +8,13 @@ pam_ftp for anonymous access
 
 * TODO
 
+README: mention required software/debian packages
+
 dates in file listings
+
+make install: including copying pam file?
+
+see pam_ftp for anonymous access
 
 * bugs
 

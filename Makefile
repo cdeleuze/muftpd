@@ -25,8 +25,8 @@ clean:
 parse.mli: data.cmi parse.ml
 	$(OCAMLC) -i parse.ml > parse.mli
 
-aux.mli: data.cmi parse.cmi aux.ml
-	$(OCAMLC) -i -I $(LIB) -I $(PAMDIR) aux.ml > aux.mli
+#aux.mli: data.cmi parse.cmi aux.ml
+#	$(OCAMLC) -i -I $(LIB) -I $(PAMDIR) aux.ml > aux.mli
 
 # exécuter en root
 # ocamlrun -I . ftpd

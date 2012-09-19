@@ -14,18 +14,17 @@ Each file in the directory has the name of a 'service'.  The file
 describes the authentication tasks required by the service.
 
 muftpd uses the "muftpd" service, so a file /etc/pam.d/muftpd must be
-created.  The main point is we don't want PAM to add any delay on
-authentication failure: this would block the whole process and so
-all our threads! We'll add the delay ourselves.
+created.  Such a file is provided in the tarball (named 'muftpd.pam').
+The main point is we don't want PAM to add any delay on authentication
+failure: this would block the whole process and so all our threads!
+We'll add the delay ourselves.
 
-The content of this file can be as simple as the following line:
+The content of this file is currently the following line:
 
 auth required pam_unix.so nodelay
 
 It says we want authentication through the standard unix module, and
 tells it not to add any delay on failure.
-
-TODO: see pam_ftp for anonymous access
 
 * Running
 
@@ -34,7 +33,15 @@ Must be root (in order for the seteuid calls to be possible).
  # ocamlrun -I . ftpd
  # ./ftpd.opt
 
-see bugs below
+see bugs below about some problem with PAM in native code.
+
+ftpd[.opt] [options]
+  -a anonymous mode
+  -d anonymous login directory (default /tmp)
+
+In anonymous mode, only "anonymous" is accepted as login, with any
+password.  The login directory can be specified with option -d.
+anonymous uses the userid of user "nobody".
 
 * Files
 
@@ -62,7 +69,7 @@ aux.ml      auxiliary functions
 ftpd.ml     main file
 	    code for PI and DTP threads
 
-muftpd      service file for PAM, to be copied in /etc/pam.d/
+muftpd.pam  service file for PAM, to be installed as /etc/pam.d/muftpd
 
 * Dynamic structure
 

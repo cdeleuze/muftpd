@@ -694,6 +694,10 @@ let init () =
   start ()
 ;;
 
+Arg.parse [ "-a", Arg.Set anonymous, "anonymous mode";
+	    "-d", Arg.Set_string anon_dir, 
+	    "anonymous login directory (default " ^ !anon_dir ^ ")"]
+  (fun _ -> ()) "ftpd[.opt] [options]";
 init ()
 
 
