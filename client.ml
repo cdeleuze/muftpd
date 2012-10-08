@@ -13,7 +13,7 @@ let wait_forever () =
 let timeout_at t op exp nor =
   let t1 = Unix.gettimeofday ()
   in
-  timeout (t -. t1)
+  timeout_unit (t -. t1)
     op exp nor
 
 (* erreur subtile avec fun () -> c (); wait_forever ()) pour le test2 !

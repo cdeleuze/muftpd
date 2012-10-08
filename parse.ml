@@ -53,6 +53,7 @@ insensitive.  We're rather loose on command syntax here.
 *)
 
 let parse_cmd s =
+  if s="" then END else
   try
     let l = String.length s in
     let e = if s.[l-2] = '\r' && s.[l-1] = '\n' then 2

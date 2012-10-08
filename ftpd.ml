@@ -10,8 +10,8 @@ open Data
 open Parse
 open Aux
 
-let date = "Jan, 2010"
-let version = "0.6"
+let date = "Oct, 2012"
+let version = "0.7"
 let msg_greeting = 
   "Welcome to muthreads ftp server (v " ^ version ^ ", " ^ date ^ ")"
 
@@ -44,13 +44,12 @@ the connection (and the thread terminates). *)
 
 let recv i k =
   let s = String.create 512 in
-  timeoutk control_idle
-    (fun k () -> read i s 0 512 k)
+  timeout control_idle
+    (read i s 0 512)
     (fun () ->
       send i 421 "Timeout: closing control connection" >>= fun () ->
-      close i)
+      close i; terminate ())
     (fun l ->
-      if l=0 then k END else
       let s = String.sub s 0 l in
       let m = parse_cmd s in
       debug ("> " ^ s); k m)
@@ -58,10 +57,10 @@ let recv i k =
 let take_or_recv mv i kr kmv =
   let s = String.create 512 in
   read_or_take mv i s 0 512 
-    (fun l -> if l=0 then kr END else
-    let s = String.sub s 0 l in
-    let m = parse_cmd s in
-    debug ("> " ^ s); kr m)
+    (fun l ->
+      let s = String.sub s 0 l in
+      let m = parse_cmd s in
+      debug ("> " ^ s); kr m)
     kmv
 
 
@@ -190,7 +189,7 @@ let bad_do_download typ skt f cnt abt k = (* TODO: first read in whole file ?*)
 
 let close_and_put skt mv code () = (* rewrite with reallywriteortake *)
   put_mvar mv code >>= fun () ->
-  close skt
+  close skt; terminate ()
 
 (* Build a string for the LIST command. *)
 
@@ -278,12 +277,12 @@ let dtp_switch (id,dir) typ dtr s abt res cnt =
   | Appe name    -> append   typ name   s cnt abt res
   | List arg ->
       (try list typ s arg abt res with _ -> 
-	put_mvar res 550 >>= fun () -> close s)
+	put_mvar res 550 >>= fun () -> close s; terminate ())
 
   | Nlst None     -> nlst typ s abt res
   | Nlst (Some d) -> 
       try Unix.chdir d; nlst typ s abt res with _ ->
-      put_mvar res 550 >>= fun () -> close s
+      put_mvar res 550 >>= fun () -> close s; terminate ()
 
 
 (* DTP thread for passive mode. Start data transfer type [dtr] given
@@ -299,12 +298,16 @@ let dtp_passive user typ s abt go res con cnt () =
       put_mvar con () >>= fun () ->
       take_mvar go >>= fun dtr ->
       if dtr <> Cancel then
-	trywith
+(*	trywith
 	  (fun () -> dtp_switch user typ dtr s' abt res cnt)
 	  (fun _  -> put_mvar res 425 >>= nothing)
-	  nothing
-      else (close s'; debug "cancel!"))
-    (fun () -> close s; debug "cancel accept")
+	  terminate*)
+	trywithk
+	  (fun k () -> dtp_switch user typ dtr s' abt res cnt; k ())
+	  (fun _ -> put_mvar res 425)
+	  terminate
+      else (close s'; debug "cancel!"; terminate ()))
+    (fun () -> close s; debug "cancel accept"; terminate ())
 
 (* DTP thread for active mode.  Create connection and start [dtr]
    transfer.  When done, put response code in [res]. We try to bind
@@ -316,12 +319,18 @@ let dtp_active user typ dtr ip p abt res cnt () =
     bind_any s !dport
   with Unix.Unix_error _ -> 
     bind_any s 0);
-  trywith
+(*  trywith
     (fun () -> 
       connect s (Unix.ADDR_INET(ip, p)) >>= fun () ->
       dtp_switch user typ dtr s abt res cnt)
     (fun (Unix.Unix_error _) -> put_mvar res 425 >>= nothing)
-    nothing
+    terminate*)
+  trywithk
+    (fun k () -> 
+      connect s (Unix.ADDR_INET(ip, p)) >>= fun () ->
+      dtp_switch user typ dtr s abt res cnt; k ())
+    (fun (Unix.Unix_error _) -> put_mvar res 425)
+    terminate
 
 
 (*s PI thread *)
@@ -337,7 +346,9 @@ type port_info =  (* parameter of PI preparing transfer phase *)
 (* The control connection can be closed unexpectedly at any moment,
    we'll call this function when this happens.  *)
 
-let do_end skt = log "Control connection closed by peer"; close skt
+let do_end skt = 
+  log "Control connection closed by peer"; 
+  close skt; terminate ()
 
 let pi skt () =
 
@@ -391,7 +402,7 @@ particular at the beginning of a DTP).
 
 	| _   -> rep 530 >>= login)
 
-    | QUIT -> rep 221 >>= fun () -> close skt
+    | QUIT -> rep 221 >>= fun () -> close skt; terminate ()
 
     | END -> do_end skt
 
@@ -456,7 +467,7 @@ particular at the beginning of a DTP).
 
     | QUIT -> 
 	send skt 1221 (msg_quit !nb_tr !bytes) >>= fun () ->
-	close skt
+	close skt; terminate ()
 
     | END -> do_end skt
 
@@ -594,10 +605,10 @@ can have race conditions!} *)
 
 	| Passive(abt,go,con,res) -> 
 	    timeout passive_wait
-              (fun () -> 
+              (fun k -> 
 		take_mvar con      >>= fun () -> 
 		rep 125            >>= fun () ->
-		put_mvar go dtr    >>= nothing)
+		put_mvar go dtr    >>= k)
 	      (fun () ->
 		rep 425            >>= fun () ->
 		put_mvar abt ()    >>= fun () ->

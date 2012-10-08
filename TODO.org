@@ -1,4 +1,13 @@
 
+PB AVEC LES dtp_switch et k () dans le trywithk ?
+était OK avec trywith simple ?
+
+parse_cmd : accept empty string, parse as END command
+
+parse_cmd will return BAD_arg if length<2
+
+should control_idle be enforced during a (very long) transfer?
+
 * to think about
 
 buf_size = 1500, make larger?
@@ -8,16 +17,37 @@ pam_ftp for anonymous access
 
 * TODO
 
+site w/o arg -> rep 400, check this is ok
+check expected behavior for site in general
+
+mode change: SITE CHMOD
+SITE UMASK
+
+really use log file
+
+hide password in log
+
 README: mention required software/debian packages
 
 dates in file listings
 
 make install: including copying pam file?
+  -> not useful if anonymous mode
 
 see pam_ftp for anonymous access
 
-* bugs
+spy (as ncftpd_spy: list logged users - login/IP - and what they're doing)
 
+restrict users to their directory
+
+anonymous write access control
+
+** performance
+
+sendfile
+cache directory listings
+
+* bugs
 ** SOLVED: urgent data
 telnet send synch (urgent data) causes
 Warning: uncaught exception, thread killed! Unix.Unix_error(2, "read", "")
@@ -42,7 +72,6 @@ as man 7 tcp says, by default urgent data is not put in the data
 stream, so I guess the select says data is available but that's urgent
 data so nothing can be read without the MSG_OOB flag to read
 
-
 ** libpam apparently segfaults in native code
 
 segfauts for incorrect logins, in native code
@@ -54,7 +83,6 @@ does not segfaults if pam not used...
 ok in bytecode
 
 set_user seems ok
-
 
 ** set_user fait planter (freeze) (amd64 ?)
 non reproduced
@@ -75,3 +103,8 @@ libpam-ocaml-dev
 avec godi
 debian libpam0g-dev
 source ocamlpam-1.1.tar.gz
+
+* DONE
+
+check uses of nothing...
+  two of them changed to terminate!

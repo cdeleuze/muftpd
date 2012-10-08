@@ -42,7 +42,7 @@ ftpd.opt: libeuid.a euid.cmxa ftpd.ml $(CMI) aux.cmx parse.cmx
 
 parse.cmi: data.cmi
 
-aux.cmo: aux.ml
+aux.cmo: aux.ml aux.cmi
 	$(OCAMLC) -I $(LIB) -I $(PAMDIR) -c aux.ml
 
 aux.cmx: aux.ml aux.cmi parse.cmi
@@ -71,10 +71,10 @@ libeuid.a: euid.o
 # ...
 
 %.cmo : %.ml %.cmi
-	$(OCAMLC) -c $< -I $(LIB)
+	$(OCAMLC) -I $(LIB) -c $<
 
 %.cmi : %.mli
-	$(OCAMLC) -c $<  -I $(LIB)
+	$(OCAMLC) -I $(LIB) -c $<
 
 %.cmx : %.ml %.cmi
 	$(OCAMLOPT) -c $<
