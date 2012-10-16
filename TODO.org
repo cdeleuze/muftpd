@@ -8,6 +8,8 @@ parse_cmd will return BAD_arg if length<2
 
 should control_idle be enforced during a (very long) transfer?
 
+see if lseek could fail in download
+
 * to think about
 
 buf_size = 1500, make larger?

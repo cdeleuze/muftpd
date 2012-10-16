@@ -1,5 +1,51 @@
-packages clients
-----------------
+#                                                           -*- mode:org -*-
+
+* specs
+** remarques sur rfc959
+
+commande PORT optionnelle (port par défaut)
+
+p19-20 the stream transfert mode is inherently reliable ...
+
+PASV créé pour les tranferts entre serveurs ?
+
+erreurs
+
+ - réponse à CWD = 200 ou 250 ?
+  250 dans les Command-Reply sequences (sec 5.4)
+  200 dans les exemples de l'appendix II
+
+ - réponse à MKD existant = 521 (appendix II) mais n'apparait pas dans
+  la liste des réponses (sec. 4.2), ni dans la liste des séquences
+  (sec 5.4)
+
+ - STOU
+  The 250 Transfer Started response must include the name generated.
+  c'est 150 ?
+  wu-ftpd l'indique dans le 150 et le 226
+
+** rfc2389
+
+ajoute FEAT
+
+** rfc3659
+
+redéfinit REST  arg = nb d'octets à sauter (0 annule)
+
+avec REST APPE peut être interdit ou identique à STOR
+STOU effet indéfini
+
+ajoute MDTM MLST MLSD
+SIZE : nb d'octets à transférer, dans le mode courant (y compris T_A)
+
+indique qu'on n'utilise pas de wildcard dans les noms de fichier
+(expansion à faire par le client)
+
+** rfc2428
+
+FTP Extensions for IPv6 and NATs
+
+* packages clients
 
 ftp (netkit)
 gftp (gtk et text)
@@ -12,9 +58,8 @@ tnftp
 cftp
 ftp-upload (pour scripts)
 
+* packages-serveurs
 
-packages-serveurs
------------------
 wu-ftpd
 ftpd (netkit)
 inetutils-ftpd
@@ -33,50 +78,6 @@ autres packages
 voir package ftp-proxy
 
 tests : ftp-upload ?
-
-
-remarques sur rfc959
---------------------
-
-commande PORT optionnelle (port par défaut)
-
-p19-20 the stream transfert mode is inherently reliable ...
-
-PASV créé pour les tranferts entre serveurs ?
-
-erreurs
-
-* réponse à CWD = 200 ou 250 ?
-  250 dans les Command-Reply sequences (sec 5.4)
-  200 dans les exemples de l'appendix II
-
-* réponse à MKD existant = 521 (appendix II) mais n'apparait pas dans
-  la liste des réponses (sec. 4.2), ni dans la liste des séquences
-  (sec 5.4)
-
-* STOU
-  The 250 Transfer Started response must include the name generated.
-  c'est 150 ?
-  wu-ftpd l'indique dans le 150 et le 226
-
-rfc2389
--------
-
-ajoute FEAT
-
-rfc3659
--------
-
-redéfinit REST  arg = nb d'octets à sauter (0 annule)
-
-avec REST APPE peut être interdit ou identique à STOR
-STOU effet indéfini
-
-ajoute MDTM MLST MLSD
-SIZE : nb d'octets à transférer, dans le mode courant (y compris T_A)
-
-indique qu'on n'utilise pas de wildcard dans les noms de fichier
-(expansion à faire par le client)
 
 
 ----
@@ -117,7 +118,6 @@ du coup, netkit FTP choisit d'office le mode binaire
 
 client netkit FTP pignole si ls après restart -> prend du retard sur
 les réponses (et fait planter serveur sur write...)
-
 
 * REST
 

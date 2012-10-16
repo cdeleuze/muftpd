@@ -89,6 +89,11 @@ let show_dtr dtr =
 
 (*s DTP thread: a few auxiliary functions *)
 
+(* Those auxiliary functions all pass the result code to their
+   continuation. They are given the socket and don't close it (since
+   they've not open it themselves.  If they open a file, they take care
+   of closing it. *)
+
 (* Upload (ie store locally) from [skt] to file descriptor [f]
    receiving with [do_read] (which takes care of TYPE conversion).
    Count bytes with [cnt].  *)
@@ -104,11 +109,10 @@ let do_upload do_read skt f cnt k =
 	  output f s 0 l;
 	  cnt := !cnt + l;
 	  loop k
-	end else begin
-	  close_out f; close skt; k 226
-	end)
+	end else 
+	  k 226)
       (* aborting if value received on abort mvar *)
-      (fun () -> close_out f; close skt; k 426)
+      (fun () -> k 426)
   in
   loop >>= k
 
@@ -116,7 +120,7 @@ let do_upload do_read skt f cnt k =
    care of TYPE conversion and of abort signals) and the file
    descriptor obtained from [do_open]. *)
 
-let gupload typ do_open skt cnt abt res =
+let gupload typ do_open skt cnt abt k =
   let do_read = 
     if typ = T_A then
       fun s off len kread kabt -> read_or_take abt skt s off len 
@@ -128,12 +132,12 @@ let gupload typ do_open skt cnt abt res =
   try
     let f = do_open () in
     do_upload do_read skt f cnt >>= fun r ->
-    put_mvar res r >>= nothing
-  with _ -> close skt; put_mvar res 550 >>= nothing
+    close_out f; k r
+  with _ -> k 550        (* if [do_open] has raised an exception *)
 
 (* Perform download from file descriptor [f] to socket [skt] using
    [typ] TYPE, counting in [cnt], aborting if value in
-   [abt].  [do_write] convert to ASCII type if needed. *)
+   [abt].  [do_write] converts to ASCII type if needed. *)
 
 let do_download typ skt f cnt abt k = (* TODO: first read in whole file ?*)
   let s = String.create buf_size
@@ -150,10 +154,9 @@ let do_download typ skt f cnt abt k = (* TODO: first read in whole file ?*)
     if l>0 then
       do_write s l (* if partial write, will fail ZZZ *)
 	(fun l -> cnt := !cnt + l; loop k)
-	(fun () -> Unix.close f; close skt; k 426)
-    else begin
-      Unix.close f; close skt; k 226
-    end
+	(fun () -> k 426)
+    else 
+      k 226
   in
   loop >>= k
 
@@ -187,10 +190,6 @@ let bad_do_download typ skt f cnt abt k = (* TODO: first read in whole file ?*)
 
 (* ZZZ trampoline empêche Array.iter write ? *)
 
-let close_and_put skt mv code () = (* rewrite with reallywriteortake *)
-  put_mvar mv code >>= fun () ->
-  close skt; terminate ()
-
 (* Build a string for the LIST command. *)
 
 let get_list typ arg =
@@ -215,47 +214,51 @@ differences between [upload] and [append] are in the way the file is
 open, plus we don't accept REST for append and so don't perform any
 [seek_out] on the file (RFC3659). *)
 
-let upload typ name c skt cnt abt res =
+let upload typ name c skt cnt abt k =
   let do_open = fun () -> 
     let f = open_out_gen [ Open_wronly; Open_creat ] umask name
     in seek_out f c; f
   in 
-  gupload typ do_open skt cnt abt res
+  gupload typ do_open skt cnt abt k
 
-let append typ name skt cnt abt res =
+let append typ name skt cnt abt k =
   let do_open = 
     fun () -> open_out_gen [ Open_append; Open_creat ] umask name
   in
-  gupload typ do_open skt cnt abt res
+  gupload typ do_open skt cnt abt k
 
-let download typ name c skt cnt abt res =
+let download typ name c skt cnt abt k =
   try
     let f = Unix.openfile name [ Unix.O_RDONLY ] 0
     in
     Unix.lseek f c Unix.SEEK_SET;
     do_download typ skt f cnt abt >>= fun r ->
-    put_mvar res r >>= nothing
+    Unix.close f; k r
   with 
     Unix.Unix_error(Unix.ENOENT, "open", _) (* ZZZ ou autre ? *)
-   -> close skt; put_mvar res 550 >>= nothing
+   -> k 550
 
-let nlst typ s abt res =
-  let sep = if typ=T_A then "\r\n" else "\n" in
-  let st = Array.fold_left 
+let nlst typ s abt k =
+  try
+    let sep = if typ=T_A then "\r\n" else "\n" in
+    let st = Array.fold_left 
       (fun st f -> st ^ f ^ sep) 
       "" 
       (Sys.readdir ".")
-  in
-  really_write_or_take abt s st 0 (String.length st)
-    (close_and_put s res 226)
-    (close_and_put s res 426)
+    in
+    really_write_or_take abt s st 0 (String.length st)
+      (fun () -> k 226)
+      (fun () -> k 426)
+  with _ -> k 550
     
-let list typ skt arg abt res =
-  let st = get_list typ arg
-  in
-  really_write_or_take abt skt st 0 (String.length st)
-    (close_and_put skt res 226)
-    (close_and_put skt res 426)
+let list typ skt arg abt k =
+  try
+    let st = get_list typ arg
+    in
+    really_write_or_take abt skt st 0 (String.length st)
+      (fun () -> k 226)
+      (fun () -> k 426)
+  with _ -> k 550
 
 (*s DTP thread: main function *)
 
@@ -267,29 +270,32 @@ let list typ skt arg abt res =
    during a file transfer.  The same applies for the current
    directory.  *)
 
-let dtp_switch (id,dir) typ dtr s abt res cnt =
+let dtp_switch (id,dir) typ dtr s abt cnt k =
   set_user id;
   Unix.chdir dir;
-  match dtr with
-  | Retr(c,name) -> download typ name c s cnt abt res
-  | Stor(c,name) -> upload   typ name c s cnt abt res
-  | Stou name    -> upload   typ (unique name) 0 s cnt abt res
-  | Appe name    -> append   typ name   s cnt abt res
-  | List arg ->
-      (try list typ s arg abt res with _ -> 
-	put_mvar res 550 >>= fun () -> close s; terminate ())
-
-  | Nlst None     -> nlst typ s abt res
-  | Nlst (Some d) -> 
-      try Unix.chdir d; nlst typ s abt res with _ ->
-      put_mvar res 550 >>= fun () -> close s; terminate ()
-
+  let op = match dtr with
+    | Retr(c,name) -> download typ name c s cnt abt
+    | Stor(c,name) -> upload   typ name c s cnt abt
+    | Stou name    -> upload   typ (unique name) 0 s cnt abt
+    | Appe name    -> append   typ name   s cnt abt
+    | List arg     -> list typ s arg abt
+	
+    | Nlst None     -> nlst typ s abt
+    | Nlst (Some d) -> 
+      try Unix.chdir d; nlst typ s abt with _ -> fun k -> k 550
+  in
+  op >>= k
 
 (* DTP thread for passive mode. Start data transfer type [dtr] given
-   in [go] (it can also ask for cancellation).  When done, put
-   response code in [res].  Note that the thread can also be cancelled
-   while blocked in accept, through [abt]. [con] is used to inform the
-   PI that the data connection has been setup. *)
+   in [go] (it can also ask for cancellation).  When done, close
+   connection and terminate.  If an exception is caught, put the error
+   response code in [res] (it has been done if no exception is
+   raised).  Note that the thread can also be cancelled while blocked
+   in accept, through [abt]. [con] is used to inform the PI that the
+   data connection has been setup.
+
+   Also note the continuation for the trywith acts as a "finally"
+   clause since any exception is caught. *)
 
 let dtp_passive user typ s abt go res con cnt () =
   accept_or_take abt s
@@ -298,39 +304,30 @@ let dtp_passive user typ s abt go res con cnt () =
       put_mvar con () >>= fun () ->
       take_mvar go >>= fun dtr ->
       if dtr <> Cancel then
-(*	trywith
-	  (fun () -> dtp_switch user typ dtr s' abt res cnt)
-	  (fun _  -> put_mvar res 425 >>= nothing)
-	  terminate*)
-	trywithk
-	  (fun k () -> dtp_switch user typ dtr s' abt res cnt; k ())
-	  (fun _ -> put_mvar res 425)
-	  terminate
+	trywith
+	  (dtp_switch user typ dtr s' abt cnt)
+	  (fun _ k -> k 425)
+	  (fun r -> put_mvar res r >>= fun () -> close s'; terminate ())
       else (close s'; debug "cancel!"; terminate ()))
+
     (fun () -> close s; debug "cancel accept"; terminate ())
 
 (* DTP thread for active mode.  Create connection and start [dtr]
-   transfer.  When done, put response code in [res]. We try to bind
-   on [!dport], or use an ephemeral port as a fallback. *)
+   transfer.  Same remarks as for [dtp_passive]. We try to bind on
+   [!dport], or use an ephemeral port as a fallback. *)
 
 let dtp_active user typ dtr ip p abt res cnt () =
   let s = new_socket () in
   (try
-    bind_any s !dport
-  with Unix.Unix_error _ -> 
-    bind_any s 0);
-(*  trywith
-    (fun () -> 
+     bind_any s !dport
+   with Unix.Unix_error _ -> 
+     bind_any s 0);
+  trywith
+    (fun k -> 
       connect s (Unix.ADDR_INET(ip, p)) >>= fun () ->
-      dtp_switch user typ dtr s abt res cnt)
-    (fun (Unix.Unix_error _) -> put_mvar res 425 >>= nothing)
-    terminate*)
-  trywithk
-    (fun k () -> 
-      connect s (Unix.ADDR_INET(ip, p)) >>= fun () ->
-      dtp_switch user typ dtr s abt res cnt; k ())
-    (fun (Unix.Unix_error _) -> put_mvar res 425)
-    terminate
+      dtp_switch user typ dtr s abt cnt >>= k)
+    (fun _ k -> k 425)
+    (fun r -> put_mvar res r >>= fun () -> close s; terminate ())
 
 
 (*s PI thread *)

@@ -6,16 +6,16 @@ OCAMLOPT=ocamlopt
 LIB=/usr/local/lib/ocaml
 
 # utiles dans une install debian classique ?
-PAMDIR=/usr/lib/ocaml/pam
-PAMLIB=/usr/lib/ocaml/stublibs
-#PAMDIR=/usr/local/godi/lib/ocaml/std-lib/pam
-#PAMLIB=/usr/local/godi/lib/ocaml/std-lib/stublibs
+#PAMDIR=/usr/lib/ocaml/pam
+#PAMLIB=/usr/lib/ocaml/stublibs
+PAMDIR=/usr/local/lib/ocaml/pam
+PAMLIB=/usr/local/lib/ocaml/stublibs
 
 # euid
 COMPFLAGS=-warn-error A
 MKLIB=ocamlmklib
-#CAMLH_DIR=/usr/local/godi/lib/ocaml/std-lib/caml/
-CAMLH_DIR=/usr/lib/ocaml/caml/
+CAMLH_DIR=/usr/local/godi/lib/ocaml/std-lib/caml/
+#CAMLH_DIR=/usr/lib/ocaml/caml/
 CFLAGS=-I$(CAMLH_DIR) -O $(BYTECCCOMPOPTS) $(SHAREDCCCOMPOPTS)
 
 clean:

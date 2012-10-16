@@ -7,7 +7,7 @@ open Muthr
 let wait_forever () =
   let mv = make_mvar ()
   in
-  take_mvar mv >>= nothing
+  take_mvar mv >>= terminate
 
     
 let timeout_at t op exp nor =
@@ -31,7 +31,7 @@ let doevery d c =
     timeout_at t
       (fun () -> c >>= wait_forever)
       (fun () -> loop (t+.d) c)
-      nothing
+      terminate
   in
   loop (Unix.gettimeofday () +. d) c
 
