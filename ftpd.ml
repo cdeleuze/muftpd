@@ -54,14 +54,14 @@ let recv i k =
       let m = parse_cmd s in
       debug ("> " ^ s); k m)
 
-let take_or_recv mv i kr kmv =
+let take_or_recv mv i kmv kr =
   let s = String.create 512 in
-  read_or_take mv i s 0 512 
+  take_or_read mv i s 0 512 
+    kmv
     (fun l ->
       let s = String.sub s 0 l in
       let m = parse_cmd s in
       debug ("> " ^ s); kr m)
-    kmv
 
 
 (*s DTP thread: data *)
@@ -123,11 +123,11 @@ let do_upload do_read skt f cnt k =
 let gupload typ do_open skt cnt abt k =
   let do_read = 
     if typ = T_A then
-      fun s off len kread kabt -> read_or_take abt skt s off len 
-	  (fun l -> let _, l = of_ascii s l in kread l) 
+      fun s off len kread kabt -> take_or_read abt skt s off len 
 	  kabt
+	  (fun l -> let _, l = of_ascii s l in kread l) 
     else
-      fun s off len kread kabt -> read_or_take abt skt s off len kread kabt
+      fun s off len kread kabt -> take_or_read abt skt s off len kabt kread
   in
   try
     let f = do_open () in
@@ -145,9 +145,9 @@ let do_download typ skt f cnt abt k = (* TODO: first read in whole file ?*)
   let do_write =
     if typ=T_A then
       fun s l kw kt -> let s,l = to_ascii s l in
-      write_or_take abt skt s 0 l kw kt
+      take_or_write abt skt s 0 l kt kw
     else
-      fun s l kw kt -> write_or_take abt skt s 0 l kw kt
+      fun s l kw kt -> take_or_write abt skt s 0 l kt kw
   in
   let rec loop k =
     let l = Unix.read f s 0 buf_size in
@@ -167,9 +167,9 @@ let bad_do_download typ skt f cnt abt k = (* TODO: first read in whole file ?*)
   let do_write =
     if typ=T_A then
       fun s p l kw kt -> let s,l = to_ascii s l in
-      write_or_take abt skt s p l kw kt
+      take_or_write abt skt s p l kt kw
     else
-      fun s p l kw kt -> write_or_take abt skt s p l kw kt
+      fun s p l kw kt -> take_or_write abt skt s p l kt kw
   in
   let rec loop_buf p n kcont kfail =
     if p < n then
@@ -246,18 +246,18 @@ let nlst typ s abt k =
       "" 
       (Sys.readdir ".")
     in
-    really_write_or_take abt s st 0 (String.length st)
-      (fun () -> k 226)
+    really_take_or_write abt s st 0 (String.length st)
       (fun () -> k 426)
+      (fun () -> k 226)
   with _ -> k 550
     
 let list typ skt arg abt k =
   try
     let st = get_list typ arg
     in
-    really_write_or_take abt skt st 0 (String.length st)
-      (fun () -> k 226)
+    really_take_or_write abt skt st 0 (String.length st)
       (fun () -> k 426)
+      (fun () -> k 226)
   with _ -> k 550
 
 (*s DTP thread: main function *)
@@ -298,7 +298,8 @@ let dtp_switch (id,dir) typ dtr s abt cnt k =
    clause since any exception is caught. *)
 
 let dtp_passive user typ s abt go res con cnt () =
-  accept_or_take abt s
+  take_or_accept abt s
+    (fun () -> close s; debug "cancel accept"; terminate ())
     (fun (s', _) ->
       close s;
       put_mvar con () >>= fun () ->
@@ -309,8 +310,6 @@ let dtp_passive user typ s abt go res con cnt () =
 	  (fun _ k -> k 425)
 	  (fun r -> put_mvar res r >>= fun () -> close s'; terminate ())
       else (close s'; debug "cancel!"; terminate ()))
-
-    (fun () -> close s; debug "cancel accept"; terminate ())
 
 (* DTP thread for active mode.  Create connection and start [dtr]
    transfer.  Same remarks as for [dtp_passive]. We try to bind on
@@ -640,7 +639,8 @@ can have race conditions!} *)
 
       let rec loop () =
 	take_or_recv res skt
-	  (fun m ->                    (* cmd received by PI *)
+	  (fun r -> rep r >>= update_stats dtr)       (* DTP is done *)
+	  (fun m ->                                   (* cmd received by PI *)
 	    match m with
 	    | STAT _ -> 
 		let kind, f = show_dtr dtr in
@@ -662,9 +662,7 @@ can have race conditions!} *)
 		put_mvar abt () >>= fun () ->
 		do_end skt
 
-	    | _ -> rep 500 >>= loop)
-	  
-	  (fun r -> rep r >>= update_stats dtr)       (* DTP is done *)
+	    | _ -> rep 500 >>= loop)	  
       in
       loop ()
 
@@ -711,34 +709,6 @@ init ()
 
 
 
-
-(*i + RFC1123
-
-
-    let create_active_dtp what ip p k =
-      let mv = make_mvar () in
-      let ab = make_mvar ()
-      in 
-      let rec loop () =
-	take_or_recv mv skt
-	  (fun m ->   
-	    match m with
-	    | STAT _ -> send skt 211 "Ongoing transfer" >>= loop
-	    | ABOR   -> 
-		put_mvar abt () >>= fun () -> 
-		take_mvar mv   >>= fun v ->
-		rep v          >>= fun () -> 
-		rep 226        >>= k
-
-	    | _ -> rep 500 >>= loop)
-	  (fun v -> rep v >>= k)    
-      in
-      spawn (dtp_active !typ what ip p abt mv); 
-      rep 150 >>=
-      loop
-    in
-
-i*)
 
 (*s TODO *)
 
